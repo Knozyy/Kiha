@@ -56,15 +56,15 @@ class GroqVisionService:
         b64_image = base64.b64encode(image_bytes).decode()
 
         try:
+            # Vision models on Groq don't support system messages —
+            # embed instructions in the user message instead.
+            full_question = f"{KIHA_SYSTEM_PROMPT}\n\nSoru: {question}"
+
             response = await self._client.post(
                 "/chat/completions",
                 json={
                     "model": self._model_name,
                     "messages": [
-                        {
-                            "role": "system",
-                            "content": KIHA_SYSTEM_PROMPT,
-                        },
                         {
                             "role": "user",
                             "content": [
@@ -76,7 +76,7 @@ class GroqVisionService:
                                 },
                                 {
                                     "type": "text",
-                                    "text": question,
+                                    "text": full_question,
                                 },
                             ],
                         },
@@ -85,7 +85,12 @@ class GroqVisionService:
                     "max_tokens": 256,
                 },
             )
-            response.raise_for_status()
+
+            if response.status_code != 200:
+                body = response.text
+                logger.error("Groq API %d: %s", response.status_code, body[:500])
+                return f"❌ Groq API hatası ({response.status_code}): {body[:200]}"
+
             data = response.json()
             answer = data["choices"][0]["message"]["content"]
             logger.info("Groq VQA: Q='%s' → A='%s'", question[:50], answer[:80])
