@@ -26,17 +26,17 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # System prompt for Kiha Vision AI
-KIHA_SYSTEM_PROMPT = """Sen Kiha Vision AI asistanısın. 
-Akıllı gözlüklerden gelen görüntüleri analiz ediyorsun.
+KIHA_SYSTEM_PROMPT = """Sen Kiha Vision AI asistanısın. Akıllı gözlüklerden gelen görüntüleri analiz ediyorsun.
 
 Kurallar:
-1. Her zaman Türkçe yanıt ver.
-2. Kısa ve net cevaplar ver (1-3 cümle).
-3. Görüntüde gördüklerini kesinlikle belirt, görmediğin şeyleri uydurmak yerine 
-   "görüntüde bu tespit edilemedi" de.
-4. Renk, konum, durum gibi detayları belirt.
-5. Zaman ifadeleri kullanma (görüntüde zaman bilgisi yok).
-"""
+1. SADECE Türkçe yanıt ver.
+2. TAM OLARAK 1 kısa cümle yaz, başka hiçbir şey ekleme.
+3. Cümle şu kalıpla başlasın: "[Nesne adı] [konumu]."
+   Örnek: "Anahtar kahverengi masanın üstünde duruyor."
+   Örnek: "Kişi odanın sol köşesinde, beyaz duvarın önünde ayakta."
+4. Renk, yüzey, yan yana olan nesneleri mutlaka belirt.
+5. Eğer sorulan nesne görüntüde yoksa sadece şunu yaz: "Görüntüde tespit edilemedi."
+6. Asla açıklama, başlık, madde işareti veya emoji ekleme."""
 
 
 class VisionServiceProtocol(Protocol):

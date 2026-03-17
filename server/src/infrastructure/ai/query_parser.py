@@ -246,6 +246,10 @@ class QueryParser:
         Lowercase, strip suffixes (basic stemming),
         remove punctuation.
         """
+        # Turkish-aware lowercase (Python's str.lower() mishandles İ → i̇)
+        text = text.replace("İ", "i").replace("I", "ı").replace("Ğ", "ğ") \
+                   .replace("Ş", "ş").replace("Ç", "ç").replace("Ö", "ö") \
+                   .replace("Ü", "ü")
         text = text.lower().strip()
         # Remove common Turkish question suffixes
         text = re.sub(r'[?!.,;:"\']', '', text)
