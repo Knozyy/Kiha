@@ -44,11 +44,20 @@ def _get_yolo() -> YoloInferenceEngine:
 
 
 def _get_vlm():
-    """VLM servisini dondur. Oncelik: Groq > Gemini > Ollama."""
+    """VLM servisini dondur. Oncelik: Gemini > Groq > Ollama."""
     global _vlm_service
     if _vlm_service is None:
         from config.settings import get_settings
         settings = get_settings()
+
+        if settings.gemini_api_key:
+            try:
+                from infrastructure.ai.gemini_vision import GeminiVisionService
+                _vlm_service = GeminiVisionService(api_key=settings.gemini_api_key)
+                logger.info("VLM: Gemini initialized")
+                return _vlm_service
+            except Exception as exc:
+                logger.error("Gemini init failed: %s", exc)
 
         if settings.groq_api_key:
             try:
