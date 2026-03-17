@@ -45,6 +45,7 @@ class KihaSettings(BaseSettings):
 
     # VLM (Vision Language Model)
     gemini_api_key: str = ""
+    groq_api_key: str = ""
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "llava:7b"
 

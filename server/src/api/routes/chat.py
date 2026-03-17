@@ -50,7 +50,17 @@ def _get_vlm():
         from config.settings import get_settings
         settings = get_settings()
 
-        # 1. Gemini (tercihli — hızlı ve ücretsiz)
+        # 1. Groq (tercihli — çok hızlı ve ücretsiz)
+        if settings.groq_api_key:
+            try:
+                from infrastructure.ai.groq_vision import GroqVisionService
+                _vlm_service = GroqVisionService(api_key=settings.groq_api_key)
+                logger.info("VLM: Groq initialized")
+                return _vlm_service
+            except Exception as exc:
+                logger.error("Groq init failed: %s", exc)
+
+        # 2. Gemini (yedek)
         if settings.gemini_api_key:
             try:
                 from infrastructure.ai.gemini_vision import GeminiVisionService
@@ -60,7 +70,7 @@ def _get_vlm():
             except Exception as exc:
                 logger.error("Gemini init failed: %s", exc)
 
-        # 2. Ollama yedek
+        # 3. Ollama yedek
         try:
             from infrastructure.ai.ollama_vision import OllamaVisionService
             _vlm_service = OllamaVisionService(
