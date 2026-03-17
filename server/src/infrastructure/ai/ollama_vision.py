@@ -43,7 +43,7 @@ class OllamaVisionService:
         self,
         model: str = DEFAULT_MODEL,
         base_url: str = DEFAULT_URL,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> None:
         self.model    = model
         self.base_url = base_url.rstrip("/")
