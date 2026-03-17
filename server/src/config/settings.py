@@ -11,6 +11,7 @@ class KihaSettings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # Server
@@ -42,6 +43,11 @@ class KihaSettings(BaseSettings):
     # AI Inference
     model_path: str = "./models/yolov8n.onnx"
     inference_device: str = "cuda"
+
+    # VLM (Vision Language Model)
+    gemini_api_key: str = ""
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "llava:7b"
 
     # UDP Receiver
     udp_host: str = "0.0.0.0"
