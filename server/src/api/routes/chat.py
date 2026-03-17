@@ -120,10 +120,10 @@ async def _build_response(
                 vlm_answer = await vlm.ask_about_image(
                     image_bytes=frame_bytes,
                     question=(
-                        f"Bu görüntüde '{label}' nesnesinin tam konumunu, "
-                        f"hangi yüzey veya nesnenin üstünde/yanında olduğunu, "
-                        f"ve görünür renk özelliklerini kısaca Türkçe açıkla. "
-                        f"Örnek: 'Anahtar kahverengi masanın üzerinde, bir kitabın yanında.'"
+                        f"Bu fotoğrafta '{label}' nerede? "
+                        f"Sadece 1 kısa cümleyle konum ve renk söyle. "
+                        f"Örnek format: 'Kişi odanın ortasında, beyaz duvarın önünde duruyor.' "
+                        f"Başka hiçbir şey yazma, sadece o 1 cümleyi yaz."
                     ),
                 )
                 content = f"🔍 {vlm_answer}\n(En son görülme: {time_str})"
