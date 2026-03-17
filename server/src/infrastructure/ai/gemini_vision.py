@@ -14,8 +14,14 @@ import base64
 import logging
 from typing import Protocol
 
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+    _GEMINI_AVAILABLE = True
+except ImportError:
+    _GEMINI_AVAILABLE = False
+    genai = None
+    types = None
 
 logger = logging.getLogger(__name__)
 
