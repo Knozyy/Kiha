@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:kiha_mobile/services/camera_service.dart';
+import 'package:kiha_mobile/services/frame_upload_service.dart';
 import 'package:kiha_mobile/theme/kiha_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -32,8 +34,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // Server configuration — loaded from SharedPreferences (set in SettingsScreen)
   String _serverAddress = '82.26.94.210:8000';
-  static const String _deviceId = 'kiha_glasses_01';
+  static const String _deviceId = 'kiha_mobile_01';
   static const String _sessionId = 'session_mobile_01';
+
+  // Camera capture
+  CameraService? _cameraService;
+  bool _isRecording = false;
+  int _frameCount = 0;
 
   // Suggestion chips from Stitch design
   static const List<_SuggestionChip> _suggestions = [
@@ -60,7 +67,44 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.dispose();
     _scrollController.dispose();
     _channel?.sink.close();
+    _cameraService?.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleRecording() async {
+    if (_isRecording) {
+      _cameraService?.stopCapture();
+      setState(() {
+        _isRecording = false;
+        _frameCount = _cameraService?.uploadedCount ?? 0;
+      });
+      return;
+    }
+
+    // Initialize camera if needed
+    if (_cameraService == null) {
+      final uploadService = FrameUploadService(
+        serverAddress: _serverAddress,
+        deviceId: _deviceId,
+      );
+      _cameraService = CameraService(uploadService: uploadService);
+      await _cameraService!.initialize();
+    }
+
+    _cameraService!.startCapture();
+    setState(() => _isRecording = true);
+
+    // Update frame count periodically
+    _updateFrameCount();
+  }
+
+  void _updateFrameCount() {
+    if (!_isRecording) return;
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted || !_isRecording) return;
+      setState(() => _frameCount = _cameraService?.uploadedCount ?? 0);
+      _updateFrameCount();
+    });
   }
 
   void _connectWebSocket() {
@@ -247,67 +291,63 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ],
           ),
-          // Glasses + battery
+          // Record button + frame count
           Row(
             children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isDark
-                      ? KihaTheme.darkSurface
-                      : KihaTheme.lightBackground,
-                  border: Border.all(
+              // Frame count badge (visible during/after recording)
+              if (_frameCount > 0 || _isRecording)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
                     color: isDark
-                        ? KihaTheme.darkBorder
-                        : Colors.transparent,
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFF1F5F9),
+                  ),
+                  child: Text(
+                    '$_frameCount kare',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF64748B),
+                    ),
                   ),
                 ),
-                child: Icon(
-                  Icons.visibility,
-                  size: 18,
-                  color: isDark
-                      ? KihaTheme.primary
-                      : KihaTheme.lightTextSecondary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: isDark
-                      ? KihaTheme.darkSurface
-                      : KihaTheme.lightBackground,
-                  border: Border.all(
-                    color: isDark
-                        ? KihaTheme.darkBorder
-                        : Colors.transparent,
+
+              // Record button
+              GestureDetector(
+                onTap: _toggleRecording,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isRecording
+                        ? Colors.redAccent.withOpacity(0.15)
+                        : (isDark
+                            ? KihaTheme.darkSurface
+                            : KihaTheme.lightBackground),
+                    border: Border.all(
+                      color: _isRecording
+                          ? Colors.redAccent.withOpacity(0.4)
+                          : (isDark
+                              ? KihaTheme.darkBorder
+                              : Colors.transparent),
+                      width: _isRecording ? 2 : 1,
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      '78%',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? const Color(0xFFCBD5E1)
-                            : KihaTheme.lightTextMain,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.battery_5_bar,
-                      size: 16,
-                      color: KihaTheme.primary,
-                    ),
-                  ],
+                  child: Icon(
+                    _isRecording ? Icons.stop : Icons.videocam,
+                    size: 22,
+                    color: _isRecording
+                        ? Colors.redAccent
+                        : (isDark
+                            ? KihaTheme.primary
+                            : KihaTheme.lightTextSecondary),
+                  ),
                 ),
               ),
             ],
