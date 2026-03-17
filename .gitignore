@@ -1,0 +1,70 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+*.cover
+
+# === C / ESP-IDF ===
+firmware/build/
+firmware/sdkconfig.old
+*.o
+*.d
+*.elf
+*.bin
+*.map
+
+# === Dart / Flutter ===
+mobile/.dart_tool/
+mobile/.packages
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/pubspec.lock
+
+# === Docker ===
+docker-compose.override.yml
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# === Environment ===
+.env
+.env.local
+.env.production
+
+# === Logs ===
+*.log
+logs/
+
+# === Planning Archive ===
+.planning/archive/
+
+# === YOLOv8 model dosyaları (büyük binary) ===
+*.pt
+*.onnx
+*.engine
+
+# === Demo çıktıları ===
+server/scripts/kayit_kareleri/
+
+# === Claude planları (yerel geliştirici notları) ===
+.claude/

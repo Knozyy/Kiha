@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="tr"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+<title>Kiha - Chat</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#00e66f",
+                        "background-light": "#f5f8f7",
+                        "background-dark": "#06141a",
+                        "surface-dark": "#0a1f29",
+                        "surface-darker": "#081820",
+                        "border-dark": "#133342"
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+        .glass-panel {
+            background: rgba(10, 31, 41, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(19, 51, 66, 0.5);
+        }
+        .glass-input {
+            background: rgba(8, 24, 32, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(19, 51, 66, 0.8);
+        }
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display min-h-screen flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+<!-- Top Bar -->
+<header class="flex items-center justify-between px-6 py-4 bg-background-dark/80 backdrop-blur-md sticky top-0 z-50 border-b border-border-dark/50">
+<div class="flex items-center gap-2">
+<h1 class="text-xl font-bold tracking-tight text-white">Kiha</h1>
+<div class="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(0,230,111,0.6)]"></div>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex items-center justify-center w-8 h-8 rounded-full bg-surface-dark border border-border-dark text-primary">
+<span class="material-symbols-outlined text-[18px]">eyeglasses</span>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-dark px-3 py-1.5 rounded-full border border-border-dark">
+<span class="text-sm font-medium text-slate-300">78%</span>
+<span class="material-symbols-outlined text-[16px] text-primary">battery_5_bar</span>
+</div>
+</div>
+</header>
+<!-- Main Chat Area (Empty State) -->
+<main class="flex-1 flex flex-col items-center justify-center p-6 gap-10 overflow-y-auto no-scrollbar">
+<!-- Welcome Section -->
+<div class="flex flex-col items-center gap-6 w-full max-w-md mt-8">
+<div class="w-24 h-24 rounded-[2rem] bg-gradient-to-br from-surface-dark to-surface-darker flex items-center justify-center border border-primary/20 shadow-[0_0_30px_rgba(0,230,111,0.15)]">
+<span class="material-symbols-outlined text-[48px] text-primary">psychology</span>
+</div>
+<div class="text-center space-y-2">
+<h2 class="text-2xl font-bold text-white">Merhaba!</h2>
+<p class="text-slate-400 text-sm max-w-[280px] leading-relaxed mx-auto">
+                    Kayıtlarınız hakkında bana her şeyi sorabilirsiniz.
+                </p>
+</div>
+</div>
+<!-- Suggestion Chips -->
+<div class="flex flex-wrap justify-center gap-3 w-full max-w-md pb-4">
+<button class="flex items-center gap-2 px-4 py-2.5 rounded-full bg-surface-dark border border-border-dark hover:border-primary/50 transition-colors text-sm font-medium text-slate-200">
+<span>🔑</span> Anahtarlarımı nereye koydum?
+            </button>
+<button class="flex items-center gap-2 px-4 py-2.5 rounded-full bg-surface-dark border border-border-dark hover:border-primary/50 transition-colors text-sm font-medium text-slate-200">
+<span>🍳</span> Ocağın altını kapattım mı?
+            </button>
+<button class="flex items-center gap-2 px-4 py-2.5 rounded-full bg-surface-dark border border-border-dark hover:border-primary/50 transition-colors text-sm font-medium text-slate-200">
+<span>📱</span> Telefonumu en son nerede gördüm?
+            </button>
+<button class="flex items-center gap-2 px-4 py-2.5 rounded-full bg-surface-dark border border-border-dark hover:border-primary/50 transition-colors text-sm font-medium text-slate-200">
+<span>🚗</span> Arabamı nereye park ettim?
+            </button>
+</div>
+<!-- Spacer to push content up slightly -->
+<div class="h-12"></div>
+</main>
+<!-- Bottom Input & Nav Area -->
+<div class="mt-auto flex flex-col">
+<!-- Input Area -->
+<div class="px-4 py-3 bg-gradient-to-t from-background-dark via-background-dark/90 to-transparent">
+<div class="glass-input flex items-center rounded-xl p-1.5 gap-2 max-w-md mx-auto">
+<button class="flex items-center justify-center w-10 h-10 rounded-full text-slate-400 hover:text-primary transition-colors shrink-0">
+<span class="material-symbols-outlined text-[24px]">mic</span>
+</button>
+<input class="flex-1 bg-transparent border-none focus:ring-0 text-white placeholder:text-slate-500 text-[15px] px-2 h-10" placeholder="Bir şey sorun..." type="text"/>
+<button class="flex items-center justify-center w-10 h-10 rounded-xl bg-primary text-background-dark shrink-0 shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined text-[20px] font-bold">arrow_upward</span>
+</button>
+</div>
+</div>
+<!-- Bottom Nav Bar -->
+<nav class="glass-panel px-6 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] flex justify-center gap-12">
+<a class="flex flex-col items-center justify-center gap-1 min-w-[64px] py-1 text-primary" href="#">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1;">chat</span>
+<span class="text-[10px] font-medium tracking-wide">Chat</span>
+</a>
+<a class="flex flex-col items-center justify-center gap-1 min-w-[64px] py-1 text-slate-500 hover:text-slate-300 transition-colors" href="#">
+<span class="material-symbols-outlined text-[24px]">settings</span>
+<span class="text-[10px] font-medium tracking-wide">Ayarlar</span>
+</a>
+</nav>
+</div>
+</body></html>

@@ -1,0 +1,76 @@
+version: "3.9"
+
+services:
+  # ============================
+  # Kiha FastAPI Server
+  # ============================
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: kiha-server
+    ports:
+      - "8000:8000"   # FastAPI HTTP
+      - "8001:8001"   # WebSocket
+      - "9000:9000/udp"  # UDP frame receiver
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - kiha-network
+    restart: unless-stopped
+
+  # ============================
+  # PostgreSQL Database
+  # ============================
+  postgres:
+    image: postgres:16-alpine
+    container_name: kiha-postgres
+    environment:
+      POSTGRES_DB: kiha
+      POSTGRES_USER: kiha_user
+      POSTGRES_PASSWORD: ${KIHA_DB_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kiha_user -d kiha"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kiha-network
+    restart: unless-stopped
+
+  # ============================
+  # Redis Cache
+  # ============================
+  redis:
+    image: redis:7-alpine
+    container_name: kiha-redis
+    command: redis-server --requirepass ${KIHA_REDIS_PASSWORD:-changeme}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${KIHA_REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kiha-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  kiha-network:
+    driver: bridge
