@@ -17,7 +17,7 @@ htmlcov/
 .coverage
 *.cover
 
-# === AI Model dosyaları (büyük binary — Git LFS kullanın) ===
+# === AI Model dosyaları (büyük binary) ===
 *.pt
 *.onnx
 *.engine
@@ -52,7 +52,7 @@ docker-compose.override.yml
 .DS_Store
 Thumbs.db
 
-# === Environment (API anahtarları burada — asla commit etme) ===
+# === Environment (API anahtarları — asla commit etme) ===
 .env
 .env.local
 .env.production
