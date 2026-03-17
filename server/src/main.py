@@ -30,9 +30,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         settings.server_port,
         settings.debug,
     )
-    # TODO: Refactor - Initialize DB pool, Redis, ZeroMQ, UDP receiver
+
+    # SQLite veritabani baslat
+    from infrastructure.database.sqlite_repository import KihaDatabase
+    db = KihaDatabase(
+        db_path=settings.sqlite_db_path,
+        frames_dir=settings.frames_storage_dir,
+    )
+    await db.connect()
+    app.state.db = db
+    logger.info("SQLite veritabani basladi: %s", settings.sqlite_db_path)
+
     yield
-    # TODO: Refactor - Cleanup connections
+
+    await db.close()
     logger.error("Kiha Server shutting down")
 
 

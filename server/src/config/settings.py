@@ -49,6 +49,10 @@ class KihaSettings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "llava:7b"
 
+    # SQLite
+    sqlite_db_path: str = "./data/kiha.db"
+    frames_storage_dir: str = "./data/frames"
+
     # UDP Receiver
     udp_host: str = "0.0.0.0"
     udp_port: int = 9000

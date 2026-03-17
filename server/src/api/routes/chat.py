@@ -1,33 +1,39 @@
-"""Kiha Server — Chat Routes."""
+"""Kiha Server — Chat Routes (v3 — SQLite).
+
+Mimari:
+1. Frame gelir → YOLOv8 + VLM analiz → SQLite'a zengin kayit
+2. Soru gelir → FTS5 arama → VLM cevap → fotograf + metin don
+"""
 
 import base64
 import json
 import logging
-import os
+import time
 from datetime import datetime
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from domain.models.base import Frame
-from infrastructure.ai.frame_search_service import FrameSearchService
 from infrastructure.ai.inference_engine import YoloInferenceEngine
-from infrastructure.ai.scene_memory import SceneMemory
+from infrastructure.ai.vlm_output_parser import parse_vlm_output, YOLO_TO_TURKISH
+from infrastructure.database.sqlite_repository import KihaDatabase, ObjectData
 from infrastructure.network.websocket_handler import ConnectionManager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# ── Module-level singletons ───────────────────────────────────────────────────
-_scene_memory = SceneMemory()
-_frame_store: dict[int, bytes] = {}   # frame_id → JPEG bytes
+# ── Singletons ────────────────────────────────────────────────────────────────
 _yolo_engine: YoloInferenceEngine | None = None
 _vlm_service = None
 _ws_manager = ConnectionManager()
-_frame_counter = 0
-_MAX_STORED_FRAMES = 500
+
+# Sahne degisiklik takibi
+_last_yolo_labels: dict[str, set[str]] = {}
+_last_vlm_call: dict[str, float] = {}
+_VLM_MIN_INTERVAL = 3.0
 
 
 def _get_yolo() -> YoloInferenceEngine:
@@ -38,19 +44,12 @@ def _get_yolo() -> YoloInferenceEngine:
 
 
 def _get_vlm():
-    """VLM servisini döndür.
-
-    Öncelik sırası:
-    1. Gemini (hızlı, ücretsiz, Türkçe iyi)
-    2. Ollama (yerel, GPU varsa)
-    3. None (yedek mod: koordinat + bağlam yanıtı)
-    """
+    """VLM servisini dondur. Oncelik: Groq > Gemini > Ollama."""
     global _vlm_service
     if _vlm_service is None:
         from config.settings import get_settings
         settings = get_settings()
 
-        # 1. Groq (tercihli — çok hızlı ve ücretsiz)
         if settings.groq_api_key:
             try:
                 from infrastructure.ai.groq_vision import GroqVisionService
@@ -60,7 +59,6 @@ def _get_vlm():
             except Exception as exc:
                 logger.error("Groq init failed: %s", exc)
 
-        # 2. Gemini (yedek)
         if settings.gemini_api_key:
             try:
                 from infrastructure.ai.gemini_vision import GeminiVisionService
@@ -70,7 +68,6 @@ def _get_vlm():
             except Exception as exc:
                 logger.error("Gemini init failed: %s", exc)
 
-        # 3. Ollama yedek
         try:
             from infrastructure.ai.ollama_vision import OllamaVisionService
             _vlm_service = OllamaVisionService(
@@ -79,171 +76,272 @@ def _get_vlm():
             )
             logger.info("VLM: Ollama initialized")
         except Exception as exc:
-            logger.error("Ollama init failed: %s", exc)
+            logger.error("VLM: Hicbir servis baslatilamadi: %s", exc)
     return _vlm_service
 
 
-def _get_search() -> FrameSearchService:
-    return FrameSearchService(scene_memory=_scene_memory)
+def _get_db(request: Request) -> KihaDatabase:
+    """Request'ten DB instance al."""
+    return request.app.state.db
 
 
-# ── Request / Response models ─────────────────────────────────────────────────
+# ── Request / Response ────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
-    """Incoming chat request from the mobile app."""
-
-    session_id: str = Field(description="Chat session identifier")
-    device_id: str = Field(description="Associated glasses device ID")
-    message: str = Field(min_length=1, max_length=1000, description="User question")
+    session_id: str
+    device_id: str
+    message: str = Field(min_length=1, max_length=1000)
 
 
 class ChatResponse(BaseModel):
-    """Chat response returned to the mobile app."""
-
     session_id: str
     message_id: str
     content: str
     referenced_frames: list[int] = Field(default_factory=list)
     confidence: float | None = None
-    frame_thumbnail_b64: str | None = None   # base64 JPEG of most relevant frame
+    frame_thumbnail_b64: str | None = None
 
 
-# ── Core pipeline helper ──────────────────────────────────────────────────────
+# ── Proaktif Sahne Analizi ────────────────────────────────────────────────────
+async def _analyze_and_store(
+    db: KihaDatabase,
+    device_id: str,
+    frame_id: int,
+    frame_bytes: bytes,
+    yolo_labels: list[str],
+    detections: list,
+    inference_ms: float,
+) -> None:
+    """Frame'i VLM ile analiz et, sonuclari SQLite'a kaydet."""
+
+    current_labels = set(yolo_labels)
+    prev_labels = _last_yolo_labels.get(device_id, set())
+    last_call = _last_vlm_call.get(device_id, 0)
+    now = time.time()
+
+    scene_changed = current_labels != prev_labels
+    enough_time = (now - last_call) >= _VLM_MIN_INTERVAL
+
+    captured_at = datetime.now().isoformat()
+    vlm = _get_vlm()
+
+    # VLM analizi gerekli mi?
+    vlm_description = ""
+    parsed_objects: list[ObjectData] = []
+
+    if vlm and (scene_changed or enough_time):
+        try:
+            vlm_description = await vlm.ask_about_image(
+                image_bytes=frame_bytes,
+                question=(
+                    "Bu goruntudeki sahneyi analiz et. "
+                    "Her nesnenin rengini, konumunu ve yakinindaki diger nesneleri belirt. "
+                    "Turkce yaz, kisa ve net ol. Ornek format:\n"
+                    "- Kirmizi anahtar kahverengi masanin ustunde\n"
+                    "- Siyah telefon kanepanin sol kosesinde\n"
+                    "Sadece gorduklerini listele."
+                ),
+            )
+            _last_yolo_labels[device_id] = current_labels
+            _last_vlm_call[device_id] = now
+            logger.info("Frame #%d VLM analizi: %s", frame_id, vlm_description[:100])
+
+        except Exception as exc:
+            logger.error("VLM analiz hatasi frame #%d: %s", frame_id, exc)
+            vlm_description = f"Sahnede: {', '.join(yolo_labels)}"
+    else:
+        vlm_description = f"Sahnede: {', '.join(yolo_labels) if yolo_labels else 'bos'}"
+
+    # VLM ciktisini parse et
+    parsed = parse_vlm_output(vlm_description, yolo_labels)
+
+    # Sahneyi kaydet
+    scene_id = await db.save_scene(
+        frame_id=frame_id,
+        scene_type=parsed.scene_type,
+        vlm_description=parsed.description,
+        yolo_labels=yolo_labels,
+        inference_ms=inference_ms,
+    )
+
+    # Nesneleri kaydet — YOLO detection + VLM zenginlestirme
+    objects_to_save: list[ObjectData] = []
+
+    for det in detections:
+        bbox = det.bbox
+        tr_name = YOLO_TO_TURKISH.get(det.label, det.label)
+
+        # VLM'den gelen zengin bilgiyi bul
+        color = ""
+        location_desc = ""
+        for pobj in parsed.objects:
+            if pobj.yolo_label == det.label or pobj.turkish_name == tr_name:
+                color = pobj.color
+                location_desc = pobj.location_desc
+                break
+
+        objects_to_save.append(ObjectData(
+            yolo_label=det.label,
+            confidence=det.confidence,
+            bbox_x_min=bbox.x_min,
+            bbox_y_min=bbox.y_min,
+            bbox_x_max=bbox.x_max,
+            bbox_y_max=bbox.y_max,
+            turkish_name=tr_name,
+            color=color,
+            location_desc=location_desc,
+        ))
+
+    if objects_to_save:
+        await db.save_objects(frame_id, scene_id, objects_to_save, captured_at)
+
+    # FTS5 indeksini guncelle
+    await db.update_fts(
+        frame_id=frame_id,
+        device_id=device_id,
+        captured_at=captured_at,
+        vlm_description=parsed.description,
+        objects=objects_to_save,
+        yolo_labels=yolo_labels,
+    )
+
+
+# ── Akilli Soru Cevaplama ─────────────────────────────────────────────────────
 async def _build_response(
+    db: KihaDatabase,
     session_id: str,
     device_id: str,
     message: str,
 ) -> ChatResponse:
-    """Parse question → search SceneMemory → VLM → ChatResponse.
+    """Kullanici sorusunu DB'de ara, VLM ile cevapla."""
 
-    Strategy:
-    1. Try to match query to YOLO labels via QueryParser
-    2. If match found → use that specific frame + ask Gemini about the label
-    3. If NO match → grab the most recent frame(s) and ask Gemini directly
-       with the user's original question (fallback to smart VLM)
-    """
-    search_svc = _get_search()
-    result = search_svc.search_with_context(device_id=device_id, query=message)
-    vlm = _get_vlm()
+    snapshot_count = await db.get_snapshot_count(device_id)
+    if snapshot_count == 0:
+        return ChatResponse(
+            session_id=session_id,
+            message_id=f"msg_{session_id}_empty",
+            content="Henuz kayit yok. Once kamerayi acip kayit yapin, sonra soru sorun.",
+            referenced_frames=[],
+            confidence=0.0,
+        )
 
+    # 1. FTS5 ile ara
+    results = await db.search_by_text(device_id, message, limit=5)
+
+    # 2. Sonuc yoksa YOLO label ile dene
+    if not results:
+        from infrastructure.ai.query_parser import QueryParser
+        parser = QueryParser()
+        parsed = parser.parse(message)
+        for label in parsed.target_labels:
+            sighting = await db.find_object_last_seen(device_id, label)
+            if sighting:
+                frame_bytes = await db.get_frame_jpeg_bytes(sighting.frame_id)
+                thumbnail_b64 = base64.b64encode(frame_bytes).decode() if frame_bytes else None
+
+                content = (
+                    f"{sighting.turkish_name or sighting.yolo_label}"
+                    f"{' (' + sighting.color + ')' if sighting.color else ''}"
+                    f" en son {sighting.detected_at[:19]} tarihinde goruldu."
+                    f"{' Konum: ' + sighting.location_desc if sighting.location_desc else ''}"
+                )
+
+                return ChatResponse(
+                    session_id=session_id,
+                    message_id=f"msg_{session_id}_label",
+                    content=content,
+                    referenced_frames=[sighting.frame_id],
+                    confidence=sighting.confidence,
+                    frame_thumbnail_b64=thumbnail_b64,
+                )
+
+    # 3. Context olustur
+    context = await db.get_recent_descriptions(device_id, limit=15)
+
+    # 4. En iyi sonucun fotografini al
+    best_frame_id = results[0].frame_id if results else None
     thumbnail_b64: str | None = None
     frame_bytes: bytes | None = None
-    content: str = ""
 
-    if result.found and result.last_sighting:
-        # ── Path A: YOLO label matched — use specific frame ──
-        frame_bytes = _frame_store.get(result.last_sighting.frame_id)
+    if best_frame_id:
+        frame_bytes = await db.get_frame_jpeg_bytes(best_frame_id)
         if frame_bytes:
             thumbnail_b64 = base64.b64encode(frame_bytes).decode()
 
-        if frame_bytes and vlm:
-            label = result.last_sighting.label
-            time_str = FrameSearchService._format_time(result.last_sighting.timestamp)
-            try:
-                vlm_answer = await vlm.ask_about_image(
-                    image_bytes=frame_bytes,
-                    question=(
-                        f"Bu fotoğrafta '{label}' nerede? "
-                        f"Sadece 1 kısa cümleyle konum ve renk söyle. "
-                        f"Başka hiçbir şey yazma."
-                    ),
-                )
-                content = f"🔍 {vlm_answer}\n(En son görülme: {time_str})"
-            except Exception as exc:
-                logger.error("VLM error (path A): %s", exc)
-                content = search_svc.generate_response_text(message, device_id)
-        else:
-            content = search_svc.generate_response_text(message, device_id)
+    frame_ids = [r.frame_id for r in results] if results else []
 
-    elif _frame_store and vlm:
-        # ── Path B: No YOLO match — ask Gemini with recent frames directly ──
-        # Grab the most recent frame
-        latest_frame_id = max(_frame_store.keys())
-        frame_bytes = _frame_store[latest_frame_id]
-        thumbnail_b64 = base64.b64encode(frame_bytes).decode()
-
+    # 5. VLM ile cevapla
+    vlm = _get_vlm()
+    if vlm and frame_bytes:
         try:
-            vlm_answer = await vlm.ask_about_image(
+            answer = await vlm.ask_about_image(
                 image_bytes=frame_bytes,
                 question=(
-                    f"Kullanıcı şunu soruyor: '{message}'\n"
-                    f"Bu fotoğrafa bakarak kullanıcının sorusunu Türkçe cevapla. "
-                    f"Kısa ve net ol, 1-2 cümle yeter."
+                    f"Kullanici soruyor: \"{message}\"\n\n"
+                    f"Son kayitlar:\n{context}\n\n"
+                    f"Bu bilgilere ve gorsele dayanarak kullanicinin sorusunu Turkce cevapla. "
+                    f"Kisa, net ve yardimci ol. 1-2 cumle yeterli. "
+                    f"Eger cevabi bilmiyorsan 'Bu bilgiye kayitlarda rastlamadim' de."
                 ),
             )
-            content = f"🔍 {vlm_answer}"
+            content = answer.strip()
         except Exception as exc:
-            logger.error("VLM error (path B): %s", exc)
-            content = (
-                "❌ Sorunuzu yanıtlayamadım. "
-                "Lütfen daha açık bir şekilde sorun."
+            logger.error("Cevap VLM hatasi: %s", exc)
+            content = _fallback_from_results(results)
+    elif vlm and not frame_bytes:
+        # Frame yok ama context var
+        try:
+            answer = await vlm.ask_about_image(
+                image_bytes=b"",
+                question=(
+                    f"Kullanici soruyor: \"{message}\"\n\n"
+                    f"Son kayitlar:\n{context}\n\n"
+                    f"Bu kayitlara dayanarak cevapla. Turkce, kisa ve net."
+                ),
             )
-
-        result_frame_ids = [latest_frame_id]
-        return ChatResponse(
-            session_id=session_id,
-            message_id=f"msg_{session_id}_fallback",
-            content=content,
-            referenced_frames=result_frame_ids,
-            confidence=0.6,
-            frame_thumbnail_b64=thumbnail_b64,
-        )
-
+            content = answer.strip()
+        except Exception:
+            content = _fallback_from_results(results)
     else:
-        # ── Path C: No frames at all ──
-        if _frame_store:
-            content = search_svc.generate_response_text(message, device_id)
-        else:
-            content = (
-                "❌ Henüz kayıt yok. Önce kamerayı açıp kayıt yapın, "
-                "sonra soru sorun."
-            )
+        content = _fallback_from_results(results)
 
     return ChatResponse(
         session_id=session_id,
-        message_id=f"msg_{session_id}_{len(result.frame_ids)}",
+        message_id=f"msg_{session_id}_{snapshot_count}",
         content=content,
-        referenced_frames=result.frame_ids,
-        confidence=0.85 if result.found else 0.2,
+        referenced_frames=frame_ids,
+        confidence=0.8 if results else 0.3,
         frame_thumbnail_b64=thumbnail_b64,
     )
 
 
-# ── REST endpoints ────────────────────────────────────────────────────────────
-@router.post("/ask", response_model=ChatResponse)
-async def ask_question(request: ChatRequest) -> ChatResponse:
-    """Ask the AI a question about recorded footage.
+def _fallback_from_results(results: list) -> str:
+    """VLM calismadigi durumda sonuclardan cevap olustur."""
+    if not results:
+        return "Bu konuda kayitlarda bir bilgi bulunamadi."
+    best = results[0]
+    return f"En ilgili kayit: {best.vlm_description}"
 
-    Examples:
-    - 'Anahtarlarımı nereye koydum?'
-    - 'Ocağın altını kapattım mı?'
-    - 'Telefonumu en son nerede gördüm?'
-    """
-    return await _build_response(
-        session_id=request.session_id,
-        device_id=request.device_id,
-        message=request.message,
-    )
+
+# ── REST Endpoints ────────────────────────────────────────────────────────────
+
+@router.post("/ask", response_model=ChatResponse)
+async def ask_question(request: ChatRequest, raw_request: Request) -> ChatResponse:
+    db = _get_db(raw_request)
+    return await _build_response(db, request.session_id, request.device_id, request.message)
 
 
 @router.post("/frame/{device_id}")
 async def ingest_frame(device_id: str, raw_request: Request) -> dict:
-    """Receive a raw JPEG frame, run YOLOv8, store results.
-
-    Content-Type: image/jpeg
-    Body: raw JPEG bytes
-    """
-    global _frame_counter
-
+    """Frame al, YOLOv8 + VLM analiz et, SQLite'a kaydet."""
+    db = _get_db(raw_request)
     frame_bytes = await raw_request.body()
     if not frame_bytes:
         return {"status": "error", "message": "Empty body"}
 
-    _frame_counter += 1
-    frame_id = _frame_counter
-
+    # YOLOv8
     engine = _get_yolo()
     frame = Frame(
-        frame_id=frame_id,
+        frame_id=0,  # gecici, DB autoincrement verecek
         timestamp=datetime.now(),
         device_id=device_id,
         data=frame_bytes,
@@ -252,22 +350,26 @@ async def ingest_frame(device_id: str, raw_request: Request) -> dict:
     try:
         result = await engine.run_inference(frame)
     except Exception as exc:
-        logger.error("Inference error frame %d: %s", frame_id, exc)
-        return {"status": "error", "frame_id": frame_id, "message": str(exc)}
-
-    _scene_memory.add_inference_result(device_id, result)
-
-    # Store frame bytes (bounded FIFO)
-    _frame_store[frame_id] = frame_bytes
-    if len(_frame_store) > _MAX_STORED_FRAMES:
-        oldest = next(iter(_frame_store))
-        del _frame_store[oldest]
+        logger.error("YOLO hatasi: %s", exc)
+        return {"status": "error", "message": str(exc)}
 
     labels = [d.label for d in result.detections]
-    logger.error(
-        "Frame %d ingested for device '%s': %s",
-        frame_id, device_id, labels,
+
+    # Frame'i SQLite + diske kaydet
+    frame_id, jpeg_path = await db.save_frame(device_id, frame_bytes)
+
+    # Proaktif VLM analizi + DB kayit
+    await _analyze_and_store(
+        db=db,
+        device_id=device_id,
+        frame_id=frame_id,
+        frame_bytes=frame_bytes,
+        yolo_labels=labels,
+        detections=result.detections,
+        inference_ms=result.inference_time_ms,
     )
+
+    logger.info("Frame #%d: %s → %s", frame_id, labels, jpeg_path)
 
     return {
         "status": "ok",
@@ -279,38 +381,33 @@ async def ingest_frame(device_id: str, raw_request: Request) -> dict:
 
 
 @router.get("/frames/{frame_id}")
-async def get_frame(frame_id: int) -> Response:
-    """Return JPEG bytes for a stored frame by ID."""
-    frame_bytes = _frame_store.get(frame_id)
+async def get_frame(frame_id: int, raw_request: Request) -> Response:
+    db = _get_db(raw_request)
+    frame_bytes = await db.get_frame_jpeg_bytes(frame_id)
     if frame_bytes is None:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Frame not found")
     return Response(content=frame_bytes, media_type="image/jpeg")
 
 
-# ── WebSocket endpoint ────────────────────────────────────────────────────────
+@router.get("/memory/{device_id}")
+async def get_memory(device_id: str, raw_request: Request) -> dict:
+    """Debug: DB'deki tum sahne kayitlarini gor."""
+    db = _get_db(raw_request)
+    desc = await db.get_recent_descriptions(device_id, limit=20)
+    count = await db.get_snapshot_count(device_id)
+    return {
+        "device_id": device_id,
+        "total_snapshots": count,
+        "descriptions": desc,
+    }
+
+
+# ── WebSocket ─────────────────────────────────────────────────────────────────
+
 @router.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str) -> None:
-    """WebSocket endpoint for real-time chat.
-
-    Expected message format (JSON):
-    {
-        "message": "Anahtarım nerede?",
-        "device_id": "glasses_01",
-        "session_id": "optional_session_id"
-    }
-
-    Response format (JSON):
-    {
-        "session_id": "...",
-        "message_id": "...",
-        "content": "Anahtar kırmızı masanın üstünde...",
-        "referenced_frames": [42, 38],
-        "confidence": 0.85,
-        "frame_thumbnail_b64": "<base64 jpeg or null>"
-    }
-    """
     await _ws_manager.connect(client_id, websocket)
+    db = websocket.app.state.db
     try:
         while True:
             raw = await websocket.receive_text()
@@ -327,7 +424,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str) -> None:
             if not message.strip():
                 continue
 
-            resp = await _build_response(session_id, device_id, message)
+            resp = await _build_response(db, session_id, device_id, message)
             await _ws_manager.send_to_client(client_id, resp.model_dump_json())
 
     except WebSocketDisconnect:
@@ -336,5 +433,4 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str) -> None:
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str) -> dict[str, str]:
-    """Retrieve a chat session by ID."""
     return {"session_id": session_id, "status": "ok"}
