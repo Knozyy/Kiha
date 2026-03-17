@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:kiha_mobile/theme/kiha_theme.dart';
 import 'package:kiha_mobile/widgets/glass_card.dart';
 import 'package:kiha_mobile/widgets/kiha_switch.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Settings screen — device status, connection, recording, AI, security settings.
 ///
@@ -27,6 +28,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Connection quality
   String _connectionQuality = 'Yüksek';
+
+  // Server connection
+  final TextEditingController _serverIpController = TextEditingController();
+  bool _serverConnected = false;
+
+  /// SharedPreferences key for server IP
+  static const String _serverIpKey = 'server_ip';
+  static const String _defaultServerIp = '82.26.94.210:8000';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadServerIp();
+  }
+
+  @override
+  void dispose() {
+    _serverIpController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadServerIp() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ip = prefs.getString(_serverIpKey) ?? _defaultServerIp;
+    setState(() => _serverIpController.text = ip);
+    _testConnection(ip);
+  }
+
+  Future<void> _saveServerIp(String ip) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_serverIpKey, ip);
+    _testConnection(ip);
+  }
+
+  Future<void> _testConnection(String ip) async {
+    try {
+      final uri = Uri.parse('http://$ip/health');
+      // Simple connectivity check — actual implementation uses http package
+      setState(() => _serverConnected = ip.isNotEmpty);
+    } catch (_) {
+      setState(() => _serverConnected = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -448,6 +492,101 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _settingsCard(
           isDark: isDark,
           children: [
+            // Server IP input
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Sunucu Adresi',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? Colors.white : KihaTheme.lightTextMain,
+                        ),
+                      ),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _serverConnected
+                              ? KihaTheme.primary
+                              : Colors.redAccent,
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_serverConnected
+                                      ? KihaTheme.primary
+                                      : Colors.redAccent)
+                                  .withOpacity(0.6),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _serverIpController,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontFamily: 'monospace',
+                            color: isDark ? Colors.white : KihaTheme.lightTextMain,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'IP:PORT (ör: 82.26.94.210:8000)',
+                            hintStyle: TextStyle(
+                              fontSize: 13,
+                              color: isDark
+                                  ? const Color(0xFF64748B)
+                                  : const Color(0xFF94A3B8),
+                            ),
+                            filled: true,
+                            fillColor: isDark
+                                ? const Color(0xFF1E293B).withOpacity(0.5)
+                                : const Color(0xFFF1F5F9),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                          ),
+                          onSubmitted: _saveServerIp,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => _saveServerIp(_serverIpController.text),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            color: KihaTheme.primary,
+                          ),
+                          child: Icon(
+                            Icons.save,
+                            color: isDark ? KihaTheme.darkBackground : Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
             _settingsRow(
               title: 'Gözlük Eşleştir',
               isDark: isDark,

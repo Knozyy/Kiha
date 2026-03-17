@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:kiha_mobile/theme/kiha_theme.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 /// Chat home screen — main screen of the Kiha app.
@@ -29,9 +30,8 @@ class _ChatScreenState extends State<ChatScreen> {
   WebSocketChannel? _channel;
   bool _wsConnected = false;
 
-  // Server configuration — update SERVER_HOST to your machine's IP when testing on a real device
-  static const String _serverHost = 'localhost';
-  static const int _serverPort = 8000;
+  // Server configuration — loaded from SharedPreferences (set in SettingsScreen)
+  String _serverAddress = '82.26.94.210:8000';
   static const String _deviceId = 'kiha_glasses_01';
   static const String _sessionId = 'session_mobile_01';
 
@@ -46,6 +46,12 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _loadServerAndConnect();
+  }
+
+  Future<void> _loadServerAndConnect() async {
+    final prefs = await SharedPreferences.getInstance();
+    _serverAddress = prefs.getString('server_ip') ?? '82.26.94.210:8000';
     _connectWebSocket();
   }
 
@@ -60,7 +66,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void _connectWebSocket() {
     try {
       final uri = Uri.parse(
-        'ws://$_serverHost:$_serverPort/api/v1/chat/ws/$_sessionId',
+        'ws://$_serverAddress/api/v1/chat/ws/$_sessionId',
       );
       _channel = WebSocketChannel.connect(uri);
 
