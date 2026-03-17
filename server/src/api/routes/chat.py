@@ -267,7 +267,20 @@ async def _build_response(
         if frame_bytes:
             thumbnail_b64 = base64.b64encode(frame_bytes).decode()
 
-    frame_ids = [r.frame_id for r in results] if results else []
+    # Hicbir sonuc yoksa en son frame'i al
+    if not frame_bytes:
+        rows = await db._db.execute_fetchall(
+            "SELECT frame_id FROM frames WHERE device_id = ? ORDER BY captured_at DESC LIMIT 1",
+            (device_id,),
+        )
+        if rows:
+            latest_id = rows[0][0]
+            frame_bytes = await db.get_frame_jpeg_bytes(latest_id)
+            if frame_bytes:
+                thumbnail_b64 = base64.b64encode(frame_bytes).decode()
+                best_frame_id = latest_id
+
+    frame_ids = [r.frame_id for r in results] if results else ([best_frame_id] if best_frame_id else [])
 
     # 5. VLM ile cevapla
     vlm = _get_vlm()
