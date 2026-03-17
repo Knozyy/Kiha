@@ -41,30 +41,32 @@ def _get_vlm():
     """VLM servisini döndür.
 
     Öncelik sırası:
-    1. Ollama (yerel, OLLAMA_URL tanımlıysa veya varsayılan port'ta çalışıyorsa)
-    2. Gemini (GEMINI_API_KEY varsa)
+    1. Gemini (hızlı, ücretsiz, Türkçe iyi)
+    2. Ollama (yerel, GPU varsa)
     3. None (yedek mod: koordinat + bağlam yanıtı)
     """
     global _vlm_service
     if _vlm_service is None:
-        # 1. Ollama (tercihli)
-        try:
-            from infrastructure.ai.ollama_vision import OllamaVisionService
-            ollama_url   = os.getenv("OLLAMA_URL",   "http://localhost:11434")
-            ollama_model = os.getenv("OLLAMA_MODEL", "llava:7b")
-            _vlm_service = OllamaVisionService(model=ollama_model, base_url=ollama_url)
-            return _vlm_service
-        except Exception as exc:
-            logger.error("Ollama init failed: %s", exc)
-
-        # 2. Gemini yedek
+        # 1. Gemini (tercihli — hızlı ve ücretsiz)
         api_key = os.getenv("GEMINI_API_KEY", "")
         if api_key:
             try:
                 from infrastructure.ai.gemini_vision import GeminiVisionService
                 _vlm_service = GeminiVisionService(api_key=api_key)
+                logger.info("VLM: Gemini initialized")
+                return _vlm_service
             except Exception as exc:
                 logger.error("Gemini init failed: %s", exc)
+
+        # 2. Ollama yedek
+        try:
+            from infrastructure.ai.ollama_vision import OllamaVisionService
+            ollama_url   = os.getenv("OLLAMA_URL",   "http://localhost:11434")
+            ollama_model = os.getenv("OLLAMA_MODEL", "llava:7b")
+            _vlm_service = OllamaVisionService(model=ollama_model, base_url=ollama_url)
+            logger.info("VLM: Ollama initialized")
+        except Exception as exc:
+            logger.error("Ollama init failed: %s", exc)
     return _vlm_service
 
 
@@ -98,22 +100,29 @@ async def _build_response(
     device_id: str,
     message: str,
 ) -> ChatResponse:
-    """Parse question → search SceneMemory → VLM location → ChatResponse."""
+    """Parse question → search SceneMemory → VLM → ChatResponse.
+
+    Strategy:
+    1. Try to match query to YOLO labels via QueryParser
+    2. If match found → use that specific frame + ask Gemini about the label
+    3. If NO match → grab the most recent frame(s) and ask Gemini directly
+       with the user's original question (fallback to smart VLM)
+    """
     search_svc = _get_search()
     result = search_svc.search_with_context(device_id=device_id, query=message)
+    vlm = _get_vlm()
 
-    # Resolve thumbnail for the most recent matching frame
     thumbnail_b64: str | None = None
     frame_bytes: bytes | None = None
+    content: str = ""
+
     if result.found and result.last_sighting:
+        # ── Path A: YOLO label matched — use specific frame ──
         frame_bytes = _frame_store.get(result.last_sighting.frame_id)
         if frame_bytes:
             thumbnail_b64 = base64.b64encode(frame_bytes).decode()
 
-    # Generate natural-language response
-    if result.found and result.last_sighting and frame_bytes:
-        vlm = _get_vlm()
-        if vlm:
+        if frame_bytes and vlm:
             label = result.last_sighting.label
             time_str = FrameSearchService._format_time(result.last_sighting.timestamp)
             try:
@@ -122,18 +131,59 @@ async def _build_response(
                     question=(
                         f"Bu fotoğrafta '{label}' nerede? "
                         f"Sadece 1 kısa cümleyle konum ve renk söyle. "
-                        f"Örnek format: 'Kişi odanın ortasında, beyaz duvarın önünde duruyor.' "
-                        f"Başka hiçbir şey yazma, sadece o 1 cümleyi yaz."
+                        f"Başka hiçbir şey yazma."
                     ),
                 )
                 content = f"🔍 {vlm_answer}\n(En son görülme: {time_str})"
             except Exception as exc:
-                logger.error("VLM error: %s", exc)
+                logger.error("VLM error (path A): %s", exc)
                 content = search_svc.generate_response_text(message, device_id)
         else:
             content = search_svc.generate_response_text(message, device_id)
+
+    elif _frame_store and vlm:
+        # ── Path B: No YOLO match — ask Gemini with recent frames directly ──
+        # Grab the most recent frame
+        latest_frame_id = max(_frame_store.keys())
+        frame_bytes = _frame_store[latest_frame_id]
+        thumbnail_b64 = base64.b64encode(frame_bytes).decode()
+
+        try:
+            vlm_answer = await vlm.ask_about_image(
+                image_bytes=frame_bytes,
+                question=(
+                    f"Kullanıcı şunu soruyor: '{message}'\n"
+                    f"Bu fotoğrafa bakarak kullanıcının sorusunu Türkçe cevapla. "
+                    f"Kısa ve net ol, 1-2 cümle yeter."
+                ),
+            )
+            content = f"🔍 {vlm_answer}"
+        except Exception as exc:
+            logger.error("VLM error (path B): %s", exc)
+            content = (
+                "❌ Sorunuzu yanıtlayamadım. "
+                "Lütfen daha açık bir şekilde sorun."
+            )
+
+        result_frame_ids = [latest_frame_id]
+        return ChatResponse(
+            session_id=session_id,
+            message_id=f"msg_{session_id}_fallback",
+            content=content,
+            referenced_frames=result_frame_ids,
+            confidence=0.6,
+            frame_thumbnail_b64=thumbnail_b64,
+        )
+
     else:
-        content = search_svc.generate_response_text(message, device_id)
+        # ── Path C: No frames at all ──
+        if _frame_store:
+            content = search_svc.generate_response_text(message, device_id)
+        else:
+            content = (
+                "❌ Henüz kayıt yok. Önce kamerayı açıp kayıt yapın, "
+                "sonra soru sorun."
+            )
 
     return ChatResponse(
         session_id=session_id,
