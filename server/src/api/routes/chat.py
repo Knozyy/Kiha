@@ -47,12 +47,14 @@ def _get_vlm():
     """
     global _vlm_service
     if _vlm_service is None:
+        from config.settings import get_settings
+        settings = get_settings()
+
         # 1. Gemini (tercihli — hızlı ve ücretsiz)
-        api_key = os.getenv("GEMINI_API_KEY", "")
-        if api_key:
+        if settings.gemini_api_key:
             try:
                 from infrastructure.ai.gemini_vision import GeminiVisionService
-                _vlm_service = GeminiVisionService(api_key=api_key)
+                _vlm_service = GeminiVisionService(api_key=settings.gemini_api_key)
                 logger.info("VLM: Gemini initialized")
                 return _vlm_service
             except Exception as exc:
@@ -61,9 +63,10 @@ def _get_vlm():
         # 2. Ollama yedek
         try:
             from infrastructure.ai.ollama_vision import OllamaVisionService
-            ollama_url   = os.getenv("OLLAMA_URL",   "http://localhost:11434")
-            ollama_model = os.getenv("OLLAMA_MODEL", "llava:7b")
-            _vlm_service = OllamaVisionService(model=ollama_model, base_url=ollama_url)
+            _vlm_service = OllamaVisionService(
+                model=settings.ollama_model,
+                base_url=settings.ollama_url,
+            )
             logger.info("VLM: Ollama initialized")
         except Exception as exc:
             logger.error("Ollama init failed: %s", exc)
