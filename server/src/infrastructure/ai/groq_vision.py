@@ -30,7 +30,7 @@ class GroqVisionService:
     def __init__(
         self,
         api_key: str,
-        model_name: str = "llama-3.2-90b-vision-preview",
+        model_name: str = "meta-llama/llama-4-scout-17b-16e-instruct",
     ) -> None:
         if not api_key:
             raise ValueError("GROQ_API_KEY boş olamaz.")
