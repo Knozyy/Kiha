@@ -1,0 +1,71 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+*.cover
+
+# === AI Model dosyaları (büyük binary — Git LFS kullanın) ===
+*.pt
+*.onnx
+*.engine
+*.bin
+*.safetensors
+
+# === C / ESP-IDF ===
+firmware/build/
+firmware/sdkconfig.old
+*.o
+*.d
+*.elf
+*.map
+
+# === Dart / Flutter ===
+mobile/.dart_tool/
+mobile/.packages
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/pubspec.lock
+
+# === Docker ===
+docker-compose.override.yml
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# === Environment (API anahtarları burada — asla commit etme) ===
+.env
+.env.local
+.env.production
+
+# === Logs ===
+*.log
+logs/
+
+# === Demo çıktıları ===
+server/scripts/kayit_kareleri/
+
+# === Claude planları (yerel) ===
+.claude/
+
+# === Planning Archive ===
+.planning/archive/
