@@ -10,9 +10,13 @@ Moondream2 → Visual Question Answering (VQA)
 import logging
 from typing import Protocol
 
-import torch
-from PIL import Image
-from transformers import AutoModelForCausalLM, AutoTokenizer
+try:
+    import torch
+    from PIL import Image
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    _MOONDREAM_AVAILABLE = True
+except ImportError:
+    _MOONDREAM_AVAILABLE = False
 
 from infrastructure.ai.gemini_vision import VisionServiceProtocol
 
@@ -126,5 +130,5 @@ class MoondreamVisionService:
             question=f"Where is the {object_name} and what is its state?",
         )
 
-# Type verification
-_service: VisionServiceProtocol = MoondreamVisionService(device="cpu")
+# Type verification (sadece transformers kuruluysa çalışır)
+# _service: VisionServiceProtocol = MoondreamVisionService(device="cpu")
