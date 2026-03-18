@@ -202,7 +202,10 @@ async def _build_response(
     # 1. FTS5 ile ara
     results = await db.search_by_text(device_id, message, limit=5)
 
-    # 2. Sonuc yoksa YOLO label ile dene
+    # 2. Sonuc yoksa YOLO label ile dene — ama VLM'e de sor
+    label_frame_bytes = None
+    label_frame_id = None
+    label_thumbnail_b64 = None
     if not results:
         from infrastructure.ai.query_parser import QueryParser
         parser = QueryParser()
@@ -210,24 +213,11 @@ async def _build_response(
         for label in parsed.target_labels:
             sighting = await db.find_object_last_seen(device_id, label)
             if sighting:
-                frame_bytes = await db.get_frame_jpeg_bytes(sighting.frame_id)
-                thumbnail_b64 = base64.b64encode(frame_bytes).decode() if frame_bytes else None
-
-                content = (
-                    f"{sighting.turkish_name or sighting.yolo_label}"
-                    f"{' (' + sighting.color + ')' if sighting.color else ''}"
-                    f" en son {sighting.detected_at[:19]} tarihinde goruldu."
-                    f"{' Konum: ' + sighting.location_desc if sighting.location_desc else ''}"
-                )
-
-                return ChatResponse(
-                    session_id=session_id,
-                    message_id=f"msg_{session_id}_label",
-                    content=content,
-                    referenced_frames=[sighting.frame_id],
-                    confidence=sighting.confidence,
-                    frame_thumbnail_b64=thumbnail_b64,
-                )
+                label_frame_bytes = await db.get_frame_jpeg_bytes(sighting.frame_id)
+                label_frame_id = sighting.frame_id
+                if label_frame_bytes:
+                    label_thumbnail_b64 = base64.b64encode(label_frame_bytes).decode()
+                break
 
     # 3. Context olustur
     context = await db.get_recent_descriptions(device_id, limit=15)
@@ -241,6 +231,12 @@ async def _build_response(
         frame_bytes = await db.get_frame_jpeg_bytes(best_frame_id)
         if frame_bytes:
             thumbnail_b64 = base64.b64encode(frame_bytes).decode()
+
+    # Label aramasindan frame varsa onu kullan
+    if not frame_bytes and label_frame_bytes:
+        frame_bytes = label_frame_bytes
+        thumbnail_b64 = label_thumbnail_b64
+        best_frame_id = label_frame_id
 
     # Hicbir sonuc yoksa en son frame'i al
     if not frame_bytes:
