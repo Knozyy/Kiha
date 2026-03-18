@@ -7,7 +7,7 @@ class KihaSettings(BaseSettings):
     """Application-wide configuration loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file="/root/Kiha/server/.env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -45,9 +45,6 @@ class KihaSettings(BaseSettings):
 
     # VLM (Vision Language Model)
     gemini_api_key: str = ""
-    groq_api_key: str = ""
-    ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "llava:7b"
 
     # SQLite
     sqlite_db_path: str = "./data/kiha.db"

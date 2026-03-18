@@ -61,7 +61,7 @@ class GeminiVisionService:
     def __init__(
         self,
         api_key: str,
-        model_name: str = "gemini-2.0-flash",
+        model_name: str = "gemini-2.5-flash-preview-04-17",
     ) -> None:
         if not api_key:
             raise ValueError(

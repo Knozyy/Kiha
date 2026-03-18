@@ -44,48 +44,14 @@ def _get_yolo() -> YoloInferenceEngine:
 
 
 def _get_vlm():
-    """VLM servisini dondur. Oncelik: Gemini > Groq > Ollama."""
+    """Gemini 2.5 Flash VLM servisini dondur."""
     global _vlm_service
     if _vlm_service is None:
         from config.settings import get_settings
+        from infrastructure.ai.gemini_vision import GeminiVisionService
         settings = get_settings()
-
-        if settings.gemini_api_key:
-            try:
-                from infrastructure.ai.gemini_vision import GeminiVisionService
-                _vlm_service = GeminiVisionService(api_key=settings.gemini_api_key)
-                logger.info("VLM: Gemini initialized")
-                return _vlm_service
-            except Exception as exc:
-                logger.error("Gemini init failed: %s", exc)
-
-        if settings.groq_api_key:
-            try:
-                from infrastructure.ai.groq_vision import GroqVisionService
-                _vlm_service = GroqVisionService(api_key=settings.groq_api_key)
-                logger.info("VLM: Groq initialized")
-                return _vlm_service
-            except Exception as exc:
-                logger.error("Groq init failed: %s", exc)
-
-        if settings.gemini_api_key:
-            try:
-                from infrastructure.ai.gemini_vision import GeminiVisionService
-                _vlm_service = GeminiVisionService(api_key=settings.gemini_api_key)
-                logger.info("VLM: Gemini initialized")
-                return _vlm_service
-            except Exception as exc:
-                logger.error("Gemini init failed: %s", exc)
-
-        try:
-            from infrastructure.ai.ollama_vision import OllamaVisionService
-            _vlm_service = OllamaVisionService(
-                model=settings.ollama_model,
-                base_url=settings.ollama_url,
-            )
-            logger.info("VLM: Ollama initialized")
-        except Exception as exc:
-            logger.error("VLM: Hicbir servis baslatilamadi: %s", exc)
+        _vlm_service = GeminiVisionService(api_key=settings.gemini_api_key)
+        logger.info("VLM: Gemini 2.5 Flash initialized")
     return _vlm_service
 
 
