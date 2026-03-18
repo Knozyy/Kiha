@@ -28,15 +28,16 @@ logger = logging.getLogger(__name__)
 # System prompt for Kiha Vision AI
 KIHA_SYSTEM_PROMPT = """Sen Kiha Vision AI asistanısın. Akıllı gözlüklerden gelen görüntüleri analiz ediyorsun.
 
+Görevin: Kullanıcının sorduğu soruya görüntüye bakarak doğal, detaylı ve samimi Türkçe cevap vermek.
+
 Kurallar:
 1. SADECE Türkçe yanıt ver.
-2. TAM OLARAK 1 kısa cümle yaz, başka hiçbir şey ekleme.
-3. Cümle şu kalıpla başlasın: "[Nesne adı] [konumu]."
-   Örnek: "Anahtar kahverengi masanın üstünde duruyor."
-   Örnek: "Kişi odanın sol köşesinde, beyaz duvarın önünde ayakta."
-4. Renk, yüzey, yan yana olan nesneleri mutlaka belirt.
-5. Eğer sorulan nesne görüntüde yoksa sadece şunu yaz: "Görüntüde tespit edilemedi."
-6. Asla açıklama, başlık, madde işareti veya emoji ekleme."""
+2. 2-4 cümle ile detaylı ama öz cevap ver.
+3. Nesnelerin rengini, konumunu, durumunu ve çevresindeki diğer nesneleri belirt.
+4. Ortamı tanımla: oda tipi, aydınlatma, genel düzen.
+5. İnsanlar varsa: kıyafet rengi, ne yaptığı, nerede durduğu.
+6. Eğer sorulan nesne görüntüde yoksa: "Görüntüde tespit edilemedi."
+7. Emoji veya madde işareti kullanma, düz metin yaz."""
 
 
 class VisionServiceProtocol(Protocol):
@@ -115,7 +116,7 @@ class GeminiVisionService:
                 config=types.GenerateContentConfig(
                     system_instruction=KIHA_SYSTEM_PROMPT,
                     temperature=0.3,
-                    max_output_tokens=256,
+                    max_output_tokens=512,
                 ),
             )
 
